@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* macros */
+#define CTRL_KEY(x) ((x) & 0x1f)
+
 /* structs */
 typedef struct {
     struct termios default_termios;
@@ -29,7 +32,7 @@ int main(void)
     while (1) {
         char c;
         read(STDIN_FILENO, &c, 1);
-        if (c == 'q')
+        if (c == CTRL_KEY('q'))
             break;
     }
     return 0;
