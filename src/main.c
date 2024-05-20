@@ -16,6 +16,17 @@
 #define CTRL_KEY(x) ((x) & 0x1f)
 #define VERSION "v0.0.1"
 
+/* enums */
+
+enum EditorKeys {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    PAGE_UP,
+    PAGE_DOWN
+};
+
 /* structs */
 typedef struct {
     struct termios default_termios;
@@ -36,8 +47,8 @@ static void get_window_size(int *rows, int *cols);
 static void s_append(String *sb, const char *s, size_t len);
 static void draw_rows(String *sb, int amount);
 static void refresh_screen(void);
-static char read_key(void);
-static void move_cursor(char key);
+static int read_key(void);
+static void move_cursor(int key);
 static void process_keypress(void);
 static void init(void);
 
@@ -161,33 +172,65 @@ void refresh_screen(void)
     write(STDIN_FILENO, sb.b, sb.len);
 }
 
-char read_key(void)
+int read_key(void)
 {
     char c = '\0';
     int nread;
     if ((nread = read(STDIN_FILENO, &c, 1)) < 0) {
         if (nread < 0 && errno != EAGAIN) die("read");
     }
-    return c;
+
+    if (c == '\x1b') {
+        char seq[3];
+
+        if (read(STDIN_FILENO, &seq[0], 1) < 0) return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) < 0) return '\x1b';
+
+        if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+
+                if (read(STDIN_FILENO, &seq[2], 1) < 0) return '\x1b';
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                    case '5': return PAGE_UP;
+                    case '6': return PAGE_DOWN;
+                    }
+                }
+
+            }
+            else {
+                switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+                }
+            }
+        }
+
+        return '\x1b';
+    } else {
+        return c;
+    }
 }
 
-void move_cursor(char key)
+void move_cursor(int key)
 {
     switch (key) {
-    case 'h':
+    case ARROW_LEFT:
         if (E.cx > 0)
             E.cx--;
         break;
-    case 'j':
-        if (E.cy < E.screenrows)
+    case ARROW_DOWN:
+        if (E.cy < E.screenrows - 1)
             E.cy++;
         break;
-    case 'k':
+    case ARROW_UP:
         if (E.cy > 0)
             E.cy--;
         break;
-    case 'l':
-        if (E.cx < E.screencols)
+    case ARROW_RIGHT:
+        if (E.cx < E.screencols - 1)
             E.cx++;
         break;
     }
@@ -195,7 +238,7 @@ void move_cursor(char key)
 
 void process_keypress(void)
 {
-    char c;
+    int c;
     c = read_key();
     switch (c) {
     case CTRL_KEY('q'):
@@ -203,10 +246,19 @@ void process_keypress(void)
         exit(0);
         break;
 
-    case 'h':
-    case 'j':
-    case 'k':
-    case 'l':
+    case PAGE_UP:
+    case PAGE_DOWN:
+        {
+            int times = E.screenrows;
+            while (times--)
+                move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        }
+        break;
+
+    case ARROW_DOWN:
+    case ARROW_UP:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
         move_cursor(c);
         break;
     }
