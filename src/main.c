@@ -4,12 +4,18 @@
  */
 
 /* headers */
+
+#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
+#define _DEFAULT_SOURCE
+
 #include <unistd.h>
 #include <termios.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <string.h>
 
 /* macros */
@@ -17,7 +23,6 @@
 #define VERSION "v0.0.1"
 
 /* enums */
-
 enum EditorKeys {
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
@@ -32,9 +37,16 @@ enum EditorKeys {
 
 /* structs */
 typedef struct {
+    size_t size;
+    char *chars;
+} Row;
+
+typedef struct {
     struct termios default_termios;
     int screenrows, screencols;
     int cy, cx;
+    Row *row;
+    int numrows;
 } EditorConfig;
 
 typedef struct {
@@ -47,6 +59,8 @@ static void die(const char *s);
 static void disable_raw_mode(void); /* needs E.default_termis to be set */
 static void enable_raw_mode(void);
 static void get_window_size(int *rows, int *cols);
+static void append_row(const char *s, size_t len);
+static void editor_open(const char *filename);
 static void s_append(String *sb, const char *s, size_t len);
 static void draw_rows(String *sb, int amount);
 static void refresh_screen(void);
@@ -59,10 +73,13 @@ static void init(void);
 EditorConfig E;
 
 /* main */
-int main(void)
+int main(int argc, char *argv[])
 {
+    if (argc != 2)
+        die("Wrong number of arguments!");
     enable_raw_mode();
     init();
+    editor_open(argv[1]);
     while (1) {
         refresh_screen();
         process_keypress();
@@ -111,6 +128,40 @@ void get_window_size(int *rows, int *cols)
     }
 }
 
+void append_row(const char *s, size_t len)
+{
+    E.row = realloc(E.row, sizeof(Row) * (E.numrows + 1));
+
+    int at = E.numrows;
+    E.row[at].size = len;
+    E.row[at].chars = (char *) malloc(len + 1);
+    memcpy(E.row[at].chars, s, len);
+    E.row[at].chars[len] = '\0';
+    E.numrows++;
+}
+
+void editor_open(const char *filename)
+{
+    FILE *fr = fopen(filename, "r");
+    if (fr == NULL)
+        die("fopen");
+
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen;
+    linelen = getline(&line, &linecap, fr);
+
+    while ((linelen = getline(&line, &linecap, fr)) != -1) {
+        while (linelen > 0 && (line[linelen - 1] == '\n' ||
+                               line[linelen - 1] == '\r'))
+            linelen--;
+        append_row(line, linelen);
+    }
+
+    free(line);
+    fclose(fr);
+}
+
 void s_append(String *sb, const char *s, size_t len)
 {
     size_t new_len = sb->len + len;
@@ -130,29 +181,37 @@ void draw_rows(String *sb, int amount)
     int y;
     for (y = 0; y < amount; y++) {
 
-        if (y == amount / 3) {
+        if (y >= E.numrows) {
+            if (E.numrows == 0 && y == E.screenrows / 3) {
 
-            char welcome[80];
-            int welcomelen = snprintf(welcome, sizeof(welcome),
-                                      "Text editor %s", VERSION);
-            if (welcomelen > E.screencols)
-                welcomelen = E.screencols;
+                char welcome[80];
+                int welcomelen = snprintf(welcome, sizeof(welcome),
+                                          "Text editor %s", VERSION);
+                if (welcomelen > E.screencols)
+                    welcomelen = E.screencols;
 
-            int padding = (E.screencols - welcomelen) / 2;
+                int padding = (E.screencols - welcomelen) / 2;
 
-            if (padding > 0) {
+                if (padding > 0)
+                {
+                    s_append(sb, "~", 1);
+                }
+
+                while (padding--)
+                {
+                    s_append(sb, " ", 1);
+                }
+
+                s_append(sb, welcome, welcomelen);
+            }
+            else
+            {
                 s_append(sb, "~", 1);
             }
-
-            while (padding--) {
-                s_append(sb, " ", 1);
-            }
-
-            s_append(sb, welcome, welcomelen);
-
-        }
-        else {
-            s_append(sb, "~", 1);
+        } else {
+            int len = E.row[y].size;
+            if (len > E.screencols) len = E.screencols;
+            s_append(sb, E.row[y].chars, len);
         }
 
         s_append(sb, "\x1b[K", 3);
@@ -292,4 +351,6 @@ void init(void)
     get_window_size(&E.screenrows, &E.screencols);
     E.cy = 0;
     E.cx = 0;
+    E.numrows = 0;
+    E.row = NULL;
 }

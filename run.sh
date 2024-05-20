@@ -1,4 +1,4 @@
 #!/bin/sh
 
 # run the code
-./build/text-editor
+./build/text-editor testfile
