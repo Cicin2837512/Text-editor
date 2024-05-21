@@ -21,6 +21,7 @@
 /* macros */
 #define CTRL_KEY(x) ((x) & 0x1f)
 #define VERSION "v0.0.1"
+#define TAB_STOP 8
 
 /* enums */
 enum EditorKeys {
@@ -38,7 +39,9 @@ enum EditorKeys {
 /* structs */
 typedef struct {
     size_t size;
+    size_t rsize;
     char *chars;
+    char *render;
 } Row;
 
 typedef struct {
@@ -47,6 +50,7 @@ typedef struct {
     int cy, cx;
     int rowoff, coloff;
     Row *row;
+    int rx;
     int numrows;
 } EditorConfig;
 
@@ -60,6 +64,8 @@ static void die(const char *s);
 static void disable_raw_mode(void); /* needs E.default_termis to be set */
 static void enable_raw_mode(void);
 static void get_window_size(int *rows, int *cols);
+static int row_rx_to_cx(Row *row, int cx);
+static void update_row(Row *row);
 static void append_row(const char *s, size_t len);
 static void editor_open(const char *filename);
 static void s_append(String *sb, const char *s, size_t len);
@@ -130,6 +136,44 @@ void get_window_size(int *rows, int *cols)
     }
 }
 
+int row_rx_to_cx(Row *row, int cx)
+{
+    int rx = 0;
+    int j;
+    for (j = 0; j < cx; j++) {
+        if (row->chars[j] == '\t')
+            rx = (TAB_STOP - 1) - (rx % TAB_STOP);
+        rx++;
+    }
+    return rx;
+}
+
+void update_row(Row *row)
+{
+    int tabs = 0;
+    int j;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') tabs++;
+    }
+
+    free(row->render);
+    row->render = (char *) malloc(row->size + tabs * (TAB_STOP - 1) + 1);
+
+    int idx;
+    for (j = 0, idx = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') {
+            row->render[idx++] = ' ';
+            while (idx % TAB_STOP != 0)
+                row->render[idx++] = ' ';
+        } else {
+            row->render[idx++] = row->chars[j];
+        }
+    }
+
+    row->render[idx] = '\0';
+    row->rsize = idx;
+}
+
 void append_row(const char *s, size_t len)
 {
     E.row = realloc(E.row, sizeof(Row) * (E.numrows + 1));
@@ -139,6 +183,11 @@ void append_row(const char *s, size_t len)
     E.row[at].chars = (char *) malloc(len + 1);
     memcpy(E.row[at].chars, s, len);
     E.row[at].chars[len] = '\0';
+
+    E.row[at].rsize = 0;
+    E.row[at].render = NULL;
+    update_row(&E.row[at]);
+
     E.numrows++;
 }
 
@@ -179,15 +228,20 @@ void s_append(String *sb, const char *s, size_t len)
 
 void scroll(void)
 {
+    E.rx = 0;
+    if (E.cy < E.numrows) {
+        E.rx = row_rx_to_cx(&E.row[E.cy], E.cx);
+    }
+
     if (E.cy < E.rowoff)
         E.rowoff = E.cy;
     else if (E.cy >= E.rowoff + E.screenrows)
         E.rowoff = E.cy - E.screenrows + 1;
 
-    if (E.cx < E.coloff)
-        E.coloff = E.cx;
-    else if (E.cx >= E.coloff + E.screencols)
-        E.coloff = E.cx - E.screencols + 1;
+    if (E.rx < E.coloff)
+        E.coloff = E.rx;
+    else if (E.rx >= E.coloff + E.screencols)
+        E.coloff = E.rx - E.screencols + 1;
 }
 
 void draw_rows(String *sb, int amount)
@@ -222,10 +276,10 @@ void draw_rows(String *sb, int amount)
                 s_append(sb, "~", 1);
             }
         } else {
-            int len = E.row[filerow].size - E.coloff;
+            int len = E.row[filerow].rsize - E.coloff;
             if (len < 0) len = 0;
             if (len > E.screencols) len = E.screencols;
-            s_append(sb, &E.row[filerow].chars[E.coloff], len);
+            s_append(sb, &E.row[filerow].render[E.coloff], len);
         }
 
         s_append(sb, "\x1b[K", 3);
@@ -242,7 +296,7 @@ void refresh_screen(void)
     draw_rows(&sb, E.screenrows);
 
     char buf[100];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.rx - E.coloff) + 1);
     s_append(&sb, buf, strlen(buf));
 
     s_append(&sb, "\x1b[?25h", 6);
@@ -386,4 +440,5 @@ void init(void)
     E.row = NULL;
     E.rowoff = 0;
     E.coloff = 0;
+    E.rx = 0;
 }
