@@ -45,6 +45,7 @@ typedef struct {
     struct termios default_termios;
     int screenrows, screencols;
     int cy, cx;
+    int rowoff, coloff;
     Row *row;
     int numrows;
 } EditorConfig;
@@ -62,6 +63,7 @@ static void get_window_size(int *rows, int *cols);
 static void append_row(const char *s, size_t len);
 static void editor_open(const char *filename);
 static void s_append(String *sb, const char *s, size_t len);
+static void scroll(void);
 static void draw_rows(String *sb, int amount);
 static void refresh_screen(void);
 static int read_key(void);
@@ -90,7 +92,7 @@ int main(int argc, char *argv[])
 /* function definitions */
 void die(const char *s)
 {
-    fprintf(stderr, "\x1b[2J\x1b[HError: %s", s);
+    fprintf(stderr, "\x1b[2J\x1b[HError: %s\n", s);
     exit(1);
 }
 
@@ -149,7 +151,6 @@ void editor_open(const char *filename)
     char *line = NULL;
     size_t linecap = 0;
     ssize_t linelen;
-    linelen = getline(&line, &linecap, fr);
 
     while ((linelen = getline(&line, &linecap, fr)) != -1) {
         while (linelen > 0 && (line[linelen - 1] == '\n' ||
@@ -176,12 +177,20 @@ void s_append(String *sb, const char *s, size_t len)
     sb->len = new_len;
 }
 
+void scroll(void)
+{
+    if (E.cy < E.rowoff)
+        E.rowoff = E.cy;
+    else if (E.cy >= E.rowoff + E.screenrows)
+        E.rowoff = E.cy - E.screenrows + 1;
+}
+
 void draw_rows(String *sb, int amount)
 {
     int y;
     for (y = 0; y < amount; y++) {
-
-        if (y >= E.numrows) {
+        int filerow = y + E.rowoff;
+        if (filerow >= E.numrows) {
             if (E.numrows == 0 && y == E.screenrows / 3) {
 
                 char welcome[80];
@@ -204,14 +213,13 @@ void draw_rows(String *sb, int amount)
 
                 s_append(sb, welcome, welcomelen);
             }
-            else
-            {
+            else {
                 s_append(sb, "~", 1);
             }
         } else {
-            int len = E.row[y].size;
+            int len = E.row[filerow].size;
             if (len > E.screencols) len = E.screencols;
-            s_append(sb, E.row[y].chars, len);
+            s_append(sb, E.row[filerow].chars, len);
         }
 
         s_append(sb, "\x1b[K", 3);
@@ -222,12 +230,13 @@ void draw_rows(String *sb, int amount)
 
 void refresh_screen(void)
 {
+    scroll();
     String sb = { NULL, 0 };
     s_append(&sb, "\x1b[?25l\x1b[H", 9);
     draw_rows(&sb, E.screenrows);
 
     char buf[100];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
     s_append(&sb, buf, strlen(buf));
 
     s_append(&sb, "\x1b[?25h", 6);
@@ -296,7 +305,7 @@ void move_cursor(int key)
             E.cx--;
         break;
     case ARROW_DOWN:
-        if (E.cy < E.screenrows - 1)
+        if (E.cy < E.numrows)
             E.cy++;
         break;
     case ARROW_UP:
@@ -353,4 +362,6 @@ void init(void)
     E.cx = 0;
     E.numrows = 0;
     E.row = NULL;
+    E.rowoff = 0;
+    E.coloff = 0;
 }
