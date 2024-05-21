@@ -183,6 +183,11 @@ void scroll(void)
         E.rowoff = E.cy;
     else if (E.cy >= E.rowoff + E.screenrows)
         E.rowoff = E.cy - E.screenrows + 1;
+
+    if (E.cx < E.coloff)
+        E.coloff = E.cx;
+    else if (E.cx >= E.coloff + E.screencols)
+        E.coloff = E.cx - E.screencols + 1;
 }
 
 void draw_rows(String *sb, int amount)
@@ -217,9 +222,10 @@ void draw_rows(String *sb, int amount)
                 s_append(sb, "~", 1);
             }
         } else {
-            int len = E.row[filerow].size;
+            int len = E.row[filerow].size - E.coloff;
+            if (len < 0) len = 0;
             if (len > E.screencols) len = E.screencols;
-            s_append(sb, E.row[filerow].chars, len);
+            s_append(sb, &E.row[filerow].chars[E.coloff], len);
         }
 
         s_append(sb, "\x1b[K", 3);
@@ -236,7 +242,7 @@ void refresh_screen(void)
     draw_rows(&sb, E.screenrows);
 
     char buf[100];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1);
     s_append(&sb, buf, strlen(buf));
 
     s_append(&sb, "\x1b[?25h", 6);
@@ -299,24 +305,40 @@ int read_key(void)
 
 void move_cursor(int key)
 {
+    Row *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
     switch (key) {
     case ARROW_LEFT:
-        if (E.cx > 0)
+        if (E.cx != 0) {
             E.cx--;
-        break;
-    case ARROW_DOWN:
-        if (E.cy < E.numrows)
-            E.cy++;
-        break;
-    case ARROW_UP:
-        if (E.cy > 0)
+        } else if (E.cy > 0) {
             E.cy--;
+            E.cx = E.row[E.cy].size;
+        }
         break;
     case ARROW_RIGHT:
-        if (E.cx < E.screencols - 1)
+        if (row && E.cx < row->size) {
             E.cx++;
+        } else if (row && E.cx == row->size) {
+            E.cy++;
+            E.cx = 0;
+        }
+        break;
+    case ARROW_UP:
+        if (E.cy != 0) {
+            E.cy--;
+        }
+        break;
+    case ARROW_DOWN:
+        if (E.cy < E.numrows) {
+            E.cy++;
+        }
         break;
     }
+
+    row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+    int rowlen = row ? row->size : 0;
+    if (E.cx > rowlen)
+        E.cx = rowlen;
 }
 
 void process_keypress(void)
