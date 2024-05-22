@@ -1,3 +1,4 @@
+step 93
 /*
  * main.c
  * it's just 1 file, no more info needed (check README.md and LICENSE)
@@ -283,8 +284,7 @@ void draw_rows(String *sb, int amount)
         }
 
         s_append(sb, "\x1b[K", 3);
-        if (y < amount - 1)
-            s_append(sb, "\r\n", 2);
+        s_append(sb, "\r\n", 2);
     }
 }
 
@@ -410,12 +410,21 @@ void process_keypress(void)
         break;
 
     case END_KEY:
-        E.cx = E.screencols - 1;
+        if (E.cy < E.numrows)
+            E.cx = E.row[E.cy].size;
         break;
 
     case PAGE_UP:
     case PAGE_DOWN:
         {
+            if (c == PAGE_UP) {
+                E.cy = E.rowoff;
+            } else if (c == PAGE_DOWN) {
+                E.cy = E.rowoff + E.screenrows - 1;
+                if (E.cy > E.numrows)
+                    E.cy = E.numrows;
+            }
+
             int times = E.screenrows;
             while (times--)
                 move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -434,6 +443,7 @@ void process_keypress(void)
 void init(void)
 {
     get_window_size(&E.screenrows, &E.screencols);
+    E.screenrows -= 1;
     E.cy = 0;
     E.cx = 0;
     E.numrows = 0;
