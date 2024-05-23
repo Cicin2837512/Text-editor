@@ -1,4 +1,3 @@
-step 93
 /*
  * main.c
  * it's just 1 file, no more info needed (check README.md and LICENSE)
@@ -53,6 +52,7 @@ typedef struct {
     Row *row;
     int rx;
     int numrows;
+    char *filename;
 } EditorConfig;
 
 typedef struct {
@@ -72,6 +72,7 @@ static void editor_open(const char *filename);
 static void s_append(String *sb, const char *s, size_t len);
 static void scroll(void);
 static void draw_rows(String *sb, int amount);
+static void draw_status_bar(String *sb);
 static void refresh_screen(void);
 static int read_key(void);
 static void move_cursor(int key);
@@ -194,6 +195,9 @@ void append_row(const char *s, size_t len)
 
 void editor_open(const char *filename)
 {
+    free(E.filename);
+    E.filename = strdup(filename);
+
     FILE *fr = fopen(filename, "r");
     if (fr == NULL)
         die("fopen");
@@ -288,12 +292,46 @@ void draw_rows(String *sb, int amount)
     }
 }
 
+void draw_status_bar(String *sb)
+{
+    s_append(sb, "\x1b[7m", 4);
+    
+    char buf[100], rbuf[100];
+    int len = snprintf(buf, sizeof(buf), "%.20s - %d lines",
+                          E.filename ? E.filename : "[New File]", E.numrows);
+
+    int rlen;
+
+    if (E.cy + 1 <= E.numrows) {
+        rlen = snprintf(rbuf, sizeof(rbuf), "%d/%d",
+                            E.cy + 1, E.numrows);
+    } else {
+        rlen = snprintf(rbuf, sizeof(rbuf), "bottom");
+    }
+
+    if (len > E.screencols) len = E.screencols;
+
+    s_append(sb, buf, len);
+    
+    for (; len < E.screencols; len++) {
+        if (E.screencols - len == rlen) {
+            s_append(sb, rbuf, rlen);
+            break;
+        }
+        s_append(sb, " ", 1);
+    }
+
+    s_append(sb, "\x1b[m", 3);
+}
+
 void refresh_screen(void)
 {
     scroll();
     String sb = { NULL, 0 };
     s_append(&sb, "\x1b[?25l\x1b[H", 9);
+
     draw_rows(&sb, E.screenrows);
+    draw_status_bar(&sb);
 
     char buf[100];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.rx - E.coloff) + 1);
@@ -451,4 +489,5 @@ void init(void)
     E.rowoff = 0;
     E.coloff = 0;
     E.rx = 0;
+    E.filename = NULL;
 }
