@@ -65,7 +65,7 @@ typedef struct {
 } String;
 
 /* function declarations */
-static void die(const char *s);
+static void die(const char *s, ...);
 static void disable_raw_mode(void); /* needs E.default_termis to be set */
 static void enable_raw_mode(void);
 static void get_window_size(int *rows, int *cols);
@@ -105,9 +105,14 @@ int main(int argc, char *argv[])
 }
 
 /* function definitions */
-void die(const char *s)
+void die(const char *s, ...)
 {
-    fprintf(stderr, "\x1b[2J\x1b[HError: %s\n", s);
+    fprintf(stderr, "\x1b[2J\x1b[H");
+    va_list args;
+    va_start(args, s);
+    vfprintf(stderr, s, args);
+    va_end(args);
+    fprintf(stderr, "\n");
     exit(1);
 }
 
