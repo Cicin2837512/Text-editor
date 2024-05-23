@@ -17,6 +17,8 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <string.h>
+#include <stdarg.h>
+#include <time.h>
 
 /* macros */
 #define CTRL_KEY(x) ((x) & 0x1f)
@@ -53,6 +55,8 @@ typedef struct {
     int rx;
     int numrows;
     char *filename;
+    char statusmsg[100];
+    time_t statustime;
 } EditorConfig;
 
 typedef struct {
@@ -73,7 +77,9 @@ static void s_append(String *sb, const char *s, size_t len);
 static void scroll(void);
 static void draw_rows(String *sb, int amount);
 static void draw_status_bar(String *sb);
+static void draw_status_message(String *sb);
 static void refresh_screen(void);
+static void set_status_message(const char *fmt, ...);
 static int read_key(void);
 static void move_cursor(int key);
 static void process_keypress(void);
@@ -90,6 +96,7 @@ int main(int argc, char *argv[])
     enable_raw_mode();
     init();
     editor_open(argv[1]);
+    set_status_message("HELP: C-q = quit");
     while (1) {
         refresh_screen();
         process_keypress();
@@ -321,7 +328,16 @@ void draw_status_bar(String *sb)
         s_append(sb, " ", 1);
     }
 
-    s_append(sb, "\x1b[m", 3);
+    s_append(sb, "\x1b[m\r\n", 5);
+}
+
+void draw_status_message(String *sb)
+{
+    s_append(sb, "\x1b[K", 3);
+    int len = strlen(E.statusmsg);
+    if (len > E.screencols) len = E.screencols;
+    if (len && time(NULL) - E.statustime < 5)
+        s_append(sb, E.statusmsg, len);
 }
 
 void refresh_screen(void)
@@ -332,6 +348,7 @@ void refresh_screen(void)
 
     draw_rows(&sb, E.screenrows);
     draw_status_bar(&sb);
+    draw_status_message(&sb);
 
     char buf[100];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.rx - E.coloff) + 1);
@@ -339,6 +356,15 @@ void refresh_screen(void)
 
     s_append(&sb, "\x1b[?25h", 6);
     write(STDIN_FILENO, sb.b, sb.len);
+}
+
+void set_status_message(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, args);
+    va_end(args);
+    E.statustime = time(NULL);
 }
 
 int read_key(void)
@@ -481,7 +507,7 @@ void process_keypress(void)
 void init(void)
 {
     get_window_size(&E.screenrows, &E.screencols);
-    E.screenrows -= 1;
+    E.screenrows -= 2;
     E.cy = 0;
     E.cx = 0;
     E.numrows = 0;
@@ -490,4 +516,6 @@ void init(void)
     E.coloff = 0;
     E.rx = 0;
     E.filename = NULL;
+    E.statusmsg[0] = '\0';
+    E.statustime = 0;
 }
