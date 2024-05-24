@@ -27,6 +27,7 @@
 
 /* enums */
 enum EditorKeys {
+    BACKSPACE = 127,
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
@@ -72,6 +73,8 @@ static void get_window_size(int *rows, int *cols);
 static int row_rx_to_cx(Row *row, int cx);
 static void update_row(Row *row);
 static void append_row(const char *s, size_t len);
+static void row_insert_char(Row *row, int at, int c);
+static void insert_char(int c);
 static void editor_open(const char *filename);
 static void s_append(String *sb, const char *s, size_t len);
 static void scroll(void);
@@ -203,6 +206,30 @@ void append_row(const char *s, size_t len)
     update_row(&E.row[at]);
 
     E.numrows++;
+}
+
+void row_insert_char(Row *row, int at, int c)
+{
+    if (at < 0 || at > row->size)
+        at = row->size;
+
+    row->chars = (char *) realloc(row->chars, row->size + 2);
+
+    memmove((row->chars + (at + 1)), (row->chars + at), row->size - at + 1);
+    row->size++;
+    row->chars[at] = c;
+    update_row(row);
+}
+
+void insert_char(int c)
+{
+    if (c != '\0') {
+        if (E.cy == E.numrows) {
+            append_row("", 0);
+        }
+        row_insert_char((E.row + E.cy), E.cx, c);
+        E.cx++;
+    }
 }
 
 void editor_open(const char *filename)
@@ -469,6 +496,10 @@ void process_keypress(void)
     int c;
     c = read_key();
     switch (c) {
+    case '\r':
+        /* TODO */
+        break;
+
     case CTRL_KEY('q'):
         write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
         exit(0);
@@ -481,6 +512,12 @@ void process_keypress(void)
     case END_KEY:
         if (E.cy < E.numrows)
             E.cx = E.row[E.cy].size;
+        break;
+
+    case BACKSPACE:
+    case CTRL_KEY('h'):
+    case DEL_KEY:
+        /* TODO */
         break;
 
     case PAGE_UP:
@@ -505,6 +542,14 @@ void process_keypress(void)
     case ARROW_LEFT:
     case ARROW_RIGHT:
         move_cursor(c);
+        break;
+    
+    case CTRL_KEY('l'):
+    case '\x1b':
+        break;
+    
+    default:
+        insert_char(c);
         break;
     }
 }
