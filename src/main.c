@@ -75,7 +75,9 @@ static void update_row(Row *row);
 static void append_row(const char *s, size_t len);
 static void row_insert_char(Row *row, int at, int c);
 static void insert_char(int c);
+static char *rows_to_string(int *len);
 static void editor_open(const char *filename);
+static void save_file(void);
 static void s_append(String *sb, const char *s, size_t len);
 static void scroll(void);
 static void draw_rows(String *sb, int amount);
@@ -232,6 +234,28 @@ void insert_char(int c)
     }
 }
 
+char *rows_to_string(int *len)
+{
+    int totlen = 0;
+    int j;
+    for (j = 0; j < E.numrows; j++) {
+        totlen += E.row[j].size + 1;
+    }
+
+    *len = totlen;
+
+    char *buf = (char *) malloc(totlen);
+    char *p = buf;
+    for (j = 0; j < E.numrows; j++) {
+        memcpy(p, E.row[j].chars, E.row[j].size);
+        p += E.row[j].size;
+        *p = '\n';
+        p++;
+    }
+
+    return buf;
+}
+
 void editor_open(const char *filename)
 {
     free(E.filename);
@@ -254,6 +278,31 @@ void editor_open(const char *filename)
 
     free(line);
     fclose(fr);
+}
+
+void save_file(void)
+{
+    if (E.filename == NULL)
+        return;
+
+    int len;
+    char *buf = rows_to_string(&len);
+
+    FILE* fw = fopen(E.filename, "w");
+    if (fw == NULL) {
+        set_status_message("saving the file was not successful because: %s", strerror(errno));
+        return;
+    }
+
+    if (fprintf(fw, "%s", buf) < 0) {
+        set_status_message("saving the file was not successful because: %s", strerror(errno));
+        return;
+    }
+
+    set_status_message("%d bytes written to the disk", len);
+
+    fclose(fw);
+    free(buf);
 }
 
 void s_append(String *sb, const char *s, size_t len)
@@ -503,6 +552,10 @@ void process_keypress(void)
     case CTRL_KEY('q'):
         write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
         exit(0);
+        break;
+
+    case CTRL_KEY('s'):
+        save_file();
         break;
 
     case HOME_KEY:
