@@ -124,7 +124,7 @@ void die(const char *s, ...)
 void disable_raw_mode(void)
 {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.default_termios) < 0)
-        die("tcsetattr");
+        die("disable_raw_mode(): tcsetattr");
 }
 
 void enable_raw_mode(void)
@@ -195,7 +195,7 @@ void update_row(Row *row)
 
 void append_row(const char *s, size_t len)
 {
-    E.row = realloc(E.row, sizeof(Row) * (E.numrows + 1));
+    E.row = (Row *) realloc(E.row, sizeof(Row) * (E.numrows + 1));
 
     int at = E.numrows;
     E.row[at].size = len;
