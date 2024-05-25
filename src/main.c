@@ -75,7 +75,9 @@ static void get_window_size(int *rows, int *cols);
 static int row_rx_to_cx(Row *row, int cx);
 static void update_row(Row *row);
 static void append_row(const char *s, size_t len);
+static void delete_row(int at);
 static void row_insert_char(Row *row, int at, int c);
+static void row_append_string(Row *row, char *s, size_t len);
 static void row_delete_char(Row *row, int at);
 static void insert_char(int c);
 static void delete_char(void);
@@ -215,6 +217,19 @@ void append_row(const char *s, size_t len)
     E.dirty++;
 }
 
+void delete_row(int at)
+{
+    if (at < 0 || at >= E.numrows)
+        return;
+
+    free(E.row[at].render);
+    free(E.row[at].chars);
+
+    memmove((E.row + at), (E.row + at + 1), sizeof(Row) * (E.numrows - at - 1));
+    E.numrows--;
+    E.dirty++;
+}
+
 void row_insert_char(Row *row, int at, int c)
 {
     if (at < 0 || at > row->size)
@@ -225,6 +240,16 @@ void row_insert_char(Row *row, int at, int c)
     memmove((row->chars + (at + 1)), (row->chars + at), row->size - at + 1);
     row->size++;
     row->chars[at] = c;
+    update_row(row);
+    E.dirty++;
+}
+
+void row_append_string(Row *row, char *s, size_t len)
+{
+    row->chars = (char *) realloc(row->chars, row->size + len + 1);
+    memcpy((row->chars + row->size), s, len);
+    row->size += len;
+    row->chars[row->size] = '\0';
     update_row(row);
     E.dirty++;
 }
@@ -255,11 +280,17 @@ void delete_char(void)
 {
     if (E.cy >= E.numrows)
         return;
+    if (E.cx == 0 && E.cy == 0) return;
 
     Row *row = &E.row[E.cy];
     if (E.cx > 0) {
         row_delete_char(row, E.cx - 1);
         E.cx--;
+    } else {
+        E.cx = E.row[E.cy - 1].size;
+        row_append_string((E.row + E.cy - 1), row->chars, row->size);
+        delete_row(E.cy);
+        E.cy--;
     }
 }
 
