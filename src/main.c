@@ -74,12 +74,13 @@ static void enable_raw_mode(void);
 static void get_window_size(int *rows, int *cols);
 static int row_rx_to_cx(Row *row, int cx);
 static void update_row(Row *row);
-static void append_row(const char *s, size_t len);
+static void insert_row(int at, const char *s, size_t len);
 static void delete_row(int at);
 static void row_insert_char(Row *row, int at, int c);
 static void row_append_string(Row *row, char *s, size_t len);
 static void row_delete_char(Row *row, int at);
 static void insert_char(int c);
+static void insert_new_line();
 static void delete_char(void);
 static char *rows_to_string(int *len);
 static void editor_open(const char *filename);
@@ -199,20 +200,20 @@ void update_row(Row *row)
     row->rsize = idx;
 }
 
-void append_row(const char *s, size_t len)
+void insert_row(int at, const char *s, size_t len)
 {
-    E.row = (Row *) realloc(E.row, sizeof(Row) * (E.numrows + 1));
 
-    int at = E.numrows;
+    if (at < 0 || at > E.numrows)
+        return;
+    E.row = realloc(E.row, sizeof(Row) * (E.numrows + 1));
+    memmove(&E.row[at + 1], &E.row[at], sizeof(Row) * (E.numrows - at));
     E.row[at].size = len;
-    E.row[at].chars = (char *) malloc(len + 1);
+    E.row[at].chars = malloc(len + 1);
     memcpy(E.row[at].chars, s, len);
     E.row[at].chars[len] = '\0';
-
     E.row[at].rsize = 0;
     E.row[at].render = NULL;
     update_row(&E.row[at]);
-
     E.numrows++;
     E.dirty++;
 }
@@ -269,11 +270,27 @@ void insert_char(int c)
 {
     if (c != '\0') {
         if (E.cy == E.numrows) {
-            append_row("", 0);
+            insert_row(E.numrows, "", 0);
         }
         row_insert_char((E.row + E.cy), E.cx, c);
         E.cx++;
     }
+}
+
+void insert_new_line()
+{
+    if (E.cx == 0) {
+        insert_row(E.cy, "", 0);
+    } else {
+        Row *row = &E.row[E.cy];
+        insert_row(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+        row = &E.row[E.cy];
+        row->size = E.cx;
+        row->chars[row->size] = '\0';
+        update_row(row);
+    }
+    E.cy++;
+    E.cx = 0;
 }
 
 void delete_char(void)
@@ -333,7 +350,7 @@ void editor_open(const char *filename)
         while (linelen > 0 && (line[linelen - 1] == '\n' ||
                                line[linelen - 1] == '\r'))
             linelen--;
-        append_row(line, linelen);
+        insert_row(E.numrows, line, linelen);
     }
 
     free(line);
@@ -610,7 +627,8 @@ void process_keypress(void)
     c = read_key();
     switch (c) {
     case '\r':
-        /* TODO */
+    case '\n':
+        insert_new_line();
         break;
 
     case CTRL_KEY('q'):
