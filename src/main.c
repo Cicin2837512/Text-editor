@@ -24,6 +24,7 @@
 #define CTRL_KEY(x) ((x) & 0x1f)
 #define VERSION "v0.0.1"
 #define TAB_STOP 8
+#define QUIT_TIMES 3
 
 /* enums */
 enum EditorKeys {
@@ -58,6 +59,7 @@ typedef struct {
     char *filename;
     char statusmsg[100];
     time_t statustime;
+    int dirty;
 } EditorConfig;
 
 typedef struct {
@@ -208,6 +210,7 @@ void append_row(const char *s, size_t len)
     update_row(&E.row[at]);
 
     E.numrows++;
+    E.dirty++;
 }
 
 void row_insert_char(Row *row, int at, int c)
@@ -221,6 +224,7 @@ void row_insert_char(Row *row, int at, int c)
     row->size++;
     row->chars[at] = c;
     update_row(row);
+    E.dirty++;
 }
 
 void insert_char(int c)
@@ -278,6 +282,7 @@ void editor_open(const char *filename)
 
     free(line);
     fclose(fr);
+    E.dirty = 0;
 }
 
 void save_file(void)
@@ -303,6 +308,7 @@ void save_file(void)
 
     fclose(fw);
     free(buf);
+    E.dirty = 0;
 }
 
 void s_append(String *sb, const char *s, size_t len)
@@ -385,8 +391,9 @@ void draw_status_bar(String *sb)
     s_append(sb, "\x1b[7m", 4);
     
     char buf[100], rbuf[100];
-    int len = snprintf(buf, sizeof(buf), "%.20s - %d lines",
-                          E.filename ? E.filename : "[New File]", E.numrows);
+    int len = snprintf(buf, sizeof(buf), "%.20s - %d lines %s",
+                          E.filename ? E.filename : "[New File]", E.numrows,
+                          E.dirty ? "(modified)" : "");
 
     int rlen;
 
@@ -542,6 +549,7 @@ void move_cursor(int key)
 
 void process_keypress(void)
 {
+    static int quit_times = QUIT_TIMES - 1;
     int c;
     c = read_key();
     switch (c) {
@@ -550,6 +558,11 @@ void process_keypress(void)
         break;
 
     case CTRL_KEY('q'):
+        if (E.dirty && quit_times > 0) {
+            set_status_message("WARNING! File has unsaved changes. Press C-q %d more times to quit.", quit_times);
+            quit_times--;
+            return;
+        }
         write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
         exit(0);
         break;
@@ -621,4 +634,5 @@ void init(void)
     E.filename = NULL;
     E.statusmsg[0] = '\0';
     E.statustime = 0;
+    E.dirty = 0;
 }
